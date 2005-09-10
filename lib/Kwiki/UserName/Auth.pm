@@ -3,60 +3,76 @@ use Kwiki::UserName -Base;
 use mixin 'Kwiki::Installer';
 use DBI;
 
-our $VERSION = '0.01';
+our $VERSION = '0.02';
 
 const cgi_class => 'Kwiki::UserName::Auth::CGI';
 const css_file  => 'user_name_auth.css';
 
+# Forward to this URL after process form submittion.
+field 'forward';
+field 'display_msg';
+
 sub register {
     my $registry = shift;
     $registry->add(preload => 'user_name');
-    $registry->add(action => 'user_name_setup');
-    $registry->add(action => 'user_name_create');
-    $registry->add(action => 'user_name_login');
-    $registry->add(action => 'user_name_logout');
-    $registry->add(action => 'user_name_mail_password');
+    $registry->add(action  => 'user_name');
 }
 
 ## Override Plugin.pm's render_screen()
 sub render_screen {
-    $self->template_process($self->screen_template, @_);
-}
-
-sub user_name_setup {
-    $self->render_screen(content_pane => 'user_name_setup.html');
-}
-
-sub user_name_login {
-    if(my $user = $self->db_verify($self->cgi->user_name_email, $self->cgi->user_name_password)) {
-	$self->hub->cookie->write('users_auth' => {name => $user });
-	return $self->render_screen(content_pane => 'user_name_login_success.html')
+    if(@_) {
+	$self->template_process($self->screen_template, @_);
+    } else {
+	super;
     }
-    $self->render_screen(content_pane => 'user_name_login_failed.html');
 }
 
-sub user_name_logout {
+sub user_name {
+    if(my $mode = $self->cgi->run_mode) {
+	$self->$mode;
+    } else {
+	$self->setup;
+    }
+    $self->render_screen;
+}
+
+## 5 run modes: setup,create,login,logout,mail_password
+sub setup {
+    $self->display_msg("Please login or register");
+}
+
+sub login {
+    if(my $user = $self->db_verify($self->cgi->email, $self->cgi->password)) {
+	$self->hub->cookie->write('users_auth' => {name => $user });
+	if($self->cgi->forward) {
+	    return $self->redirect($self->cgi->forward);
+	}
+	$self->display_msg("Login success");
+    } else {
+	$self->display_msg("Login falied: Wrong user name or password.");
+    }
+}
+
+sub logout {
     $self->hub->cookie->write('users_auth' => {}, { -expires => '-3d' });
-    $self->render_screen(content_pane => 'user_name_logout_success.html');
+    $self->display_msg("Logout success");
 }
 
-sub user_name_create {
-    if($self->cgi->user_name_password) {
-	if($self->cgi->user_name_password_verify eq $self->cgi->user_name_password) {
+sub create {
+    if($self->cgi->password) {
+	if($self->cgi->password_verify eq $self->cgi->password) {
 	    if($self->db_add($self->cgi->all)) {
-		$self->render_screen(content_pane => 'user_name_register_ok.html');
+		$self->display_msg("Registered");
 	    } else {
-		$self->render_screen(content_pane => 'user_name_duplicate.html');
+		$self->display_msg("Duplicated username");
 	    }
 	} else {
-	    $self->render_screen(content_pane => 'user_name_password_not_match.html');
+	    $self->display_msg("Password does not match");
 	}
-    } else {
-	$self->render_screen(content_pane => 'user_name_registration_form.html');
     }
 }
 
-sub user_name_mail_password {
+sub mail_password {
 }
 
 # DB subs
@@ -98,10 +114,10 @@ sub db_verify {
 
 sub db_add {
     my %vars = @_;
-    return 0 if $self->db_exists($vars{user_name_email});
+    return 0 if $self->db_exists($vars{email});
     my $dbh = $self->db_connect;
     my $sth = $dbh->prepare('INSERT INTO user_name values(?,?,?)');
-    $sth->execute(@vars{qw(user_name_display_name user_name_email user_name_password )});
+    $sth->execute(@vars{qw(display_name email password )});
     $sth->finish;
     $dbh->disconnect;
     return 1;
@@ -118,11 +134,15 @@ sub db_exists {
 package Kwiki::UserName::Auth::CGI;
 use base 'Kwiki::CGI';
 
-cgi user_name_submit          => -utf8;
-cgi user_name_display_name    => -utf8;
-cgi user_name_email           => -utf8;
-cgi user_name_password        => -utf8;
-cgi user_name_password_verify => -utf8;
+# Forward to this URL after process form submittion.
+cgi 'forward';
+
+cgi 'run_mode';
+
+cgi 'display_name';
+cgi 'email';
+cgi 'password';
+cgi 'password_verify';
 
 package Kwiki::UserName::Auth;
 
@@ -182,13 +202,15 @@ See <http://www.perl.com/perl/misc/Artistic.html>
 __template/tt2/user_name_title.html__
 <div id="user_name_title">
 <em>(You are 
-<a href="[% script_name %]?action=user_name_setup">
+<a href="[% script_name %]?action=user_name">
 [%- hub.users.current.name || 'an UnknownUser' -%]
 </a>)
 </em>
 </div>
-
-__template/tt2/user_name_setup.html__
+__template/tt2/user_name_content.html__
+[% IF self.display_msg %]
+<p class="message">[% self.display_msg %]</p>
+[% END %]
 [% IF hub.users.current.name %]
 [% INCLUDE user_name_logout_form.html %]
 [% ELSE %]
@@ -199,14 +221,15 @@ __template/tt2/user_name_setup.html__
 __template/tt2/user_name_mail_password_form.html__
 [% IF 0 %]
 <form action="[% script_name %]" method="post" id="user_name_mail_password" class="user_name">
-<input type="hidden" name="action" value="user_name_mail_password" />
+<input type="hidden" name="action" value="user_name" />
+<input type="hidden" name="run_mode" value="mail_password" />
 <fieldset>
 <legend>Password Recovery</legend>
 <p>
 If you forgot your passowrd, give us your email address to recover it.
 </p>
 <label>Email</label>
-<input type="text" name="user_name_email" />
+<input type="text" name="email" />
 <hr />
 <input type="submit" name="user_name_submit" value="Recover" />
 </fieldset>
@@ -215,7 +238,7 @@ If you forgot your passowrd, give us your email address to recover it.
 __template/tt2/user_name_logout_form.html__
 <p>You're now logined as [% hub.users.current.name %]</p>
 
-You could <a href="[% script_name %]?action=user_name_logout">Logout</a>.
+You could <a href="[% script_name %]?action=user_name&run_mode=logout">Logout</a>.
 __template/tt2/user_name_login_success.html__
 <h1>Logined</h1>
 __template/tt2/user_name_logout_success.html__
@@ -225,36 +248,41 @@ __template/tt2/user_name_login_failed.html__
 [% INCLUDE user_name_login_form.html %]
 __template/tt2/user_name_login_form.html__
 <form action="[% script_name %]" method="post" id="user_name_login" class="user_name">
-<input type="hidden" name="action" value="user_name_login" />
+<input type="hidden" name="action" value="user_name" />
+<input type="hidden" name="run_mode" value="login" />
+[%- IF hub.user_name.forward %]
+<input type="hidden" name="forward" value="[% hub.user_name.forward %]" />
+[% END -%]
 <fieldset>
 <legend>Login</legend>
 
 <label>Email</label>
-<input type="text" name="user_name_email" />
+<input type="text" name="email" />
 
 <label>Password</label>
-<input type="password" name="user_name_password" />
+<input type="password" name="password" />
 <hr />
 <input type="submit" name="user_name_submit" value="Login" />
 </fieldset>
 </form>
 __template/tt2/user_name_registration_form.html__
 <form action="[% script_name %]" method="post" id="user_name_create" class="user_name">
-<input type="hidden" name="action" value="user_name_create" />
+<input type="hidden" name="action" value="user_name" />
+<input type="hidden" name="run_mode" value="create" />
 <fieldset>
 <legend>Registration</legend>
 
 <label>Email</label>
-<input type="text" name="user_name_email" />
+<input type="text" name="email" />
 
 <label>Display Name</label>
-<input type="text" name="user_name_display_name" />
+<input type="text" name="display_name" />
 
 <label>Password</label>
-<input type="password" name="user_name_password" />
+<input type="password" name="password" />
 
 <label>Password(Verify)</label>
-<input type="password" name="user_name_password_verify" />
+<input type="password" name="password_verify" />
 
 <hr />
 <input type="submit" name="user_name_submit" value="Register" />
