@@ -1,32 +1,23 @@
 package Kwiki::Users::Auth;
 use Kwiki::Users -Base;
-our $VERSION = 0.01;
+our $VERSION = "0.02";
 
 const class_id => 'users';
 const class_title => 'Kwiki users registered online';
 const user_class => 'Kwiki::User::Auth';
 
-sub current {
-    return $self->{current} = shift if @_;
-    return $self->{current} if defined $self->{current};
-    $self->{current} = $self->new_user();
-}
-
-sub new_user {
-    $self->user_class->new();
-}
-
 package Kwiki::User::Auth;
 use base 'Kwiki::User';
 
-field 'name' => '';
+field 'name';
+field 'email';
 
 sub set_user_name {
     return unless $self->is_in_cgi;
-    my $name = '';
-    my $cookie = $self->hub->cookie->jar->{users_auth};
-    $cookie && $cookie->{name} or return;
-    $self->name($cookie->{name});
+    my $users = $self->hub->session->load->param("users_auth");
+    $users && $users->{name} or return;
+    $self->name($users->{name});
+    $self->email($users->{email});
 }
 
 package Kwiki::Users::Auth;

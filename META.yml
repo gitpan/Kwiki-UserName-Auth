@@ -1,13 +1,15 @@
 name: Kwiki-UserName-Auth
-version: 0.02
-abstract: 
+version: 0.03
+abstract: Online user regsitration plugin for Kwiki.
 author: Kang-min Liu <gugod@gugod.org>
 license: perl
 distribution_type: module
 build_requires:
   Test::More: 0
 requires:
-  Spiffy: 0
+  Kwiki: 0.38
+  Kwiki::DB: 0
+  Kwiki::Session: 0
 no_index:
   directory:
     - inc

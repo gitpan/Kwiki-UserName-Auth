@@ -1,12 +1,13 @@
 package Kwiki::UserName::Auth;
 use Kwiki::UserName -Base;
 use mixin 'Kwiki::Installer';
-use DBI;
 
-our $VERSION = '0.02';
+our $VERSION = '0.03';
 
 const cgi_class => 'Kwiki::UserName::Auth::CGI';
 const css_file  => 'user_name_auth.css';
+
+field db => -init => "\$self->hub->load_class('db')";
 
 # Forward to this URL after process form submittion.
 field 'forward';
@@ -16,6 +17,11 @@ sub register {
     my $registry = shift;
     $registry->add(preload => 'user_name');
     $registry->add(action  => 'user_name');
+}
+
+sub init {
+    super;
+    $self->hub->config->add_field("db_class" => 'Kwiki::DB::DBI');
 }
 
 ## Override Plugin.pm's render_screen()
@@ -43,7 +49,8 @@ sub setup {
 
 sub login {
     if(my $user = $self->db_verify($self->cgi->email, $self->cgi->password)) {
-	$self->hub->cookie->write('users_auth' => {name => $user });
+	my $session = $self->hub->session->load;
+	$session->param("users_auth",{name => $user, email => $self->cgi->email });
 	if($self->cgi->forward) {
 	    return $self->redirect($self->cgi->forward);
 	}
@@ -54,7 +61,7 @@ sub login {
 }
 
 sub logout {
-    $self->hub->cookie->write('users_auth' => {}, { -expires => '-3d' });
+    $self->hub->session->load->param("users_auth", {});
     $self->display_msg("Logout success");
 }
 
@@ -77,11 +84,10 @@ sub mail_password {
 
 # DB subs
 
-
 sub dbinit {
     my $db = shift;
-    my $dbh = DBI->connect("dbi:SQLite:dbname=$db","","",
-			   { RaiseError => 1, AutoCommit => 1 });
+    my $dbh = $self->db->connect("dbi:SQLite:dbname=$db","","",
+				 { RaiseError => 1, AutoCommit => 1 });
     $dbh->do('CREATE TABLE user_name (displayname,email,password)');
     $dbh->disconnect;
 }
@@ -95,8 +101,8 @@ sub dbpath {
 
 sub db_connect {
     my $db  = $self->dbpath;
-    DBI->connect("dbi:SQLite:dbname=$db","","",
-                 { RaiseError => 1, AutoCommit => 1 });
+    $self->db->connect("dbi:SQLite:dbname=$db","","",
+		       { RaiseError => 1, AutoCommit => 1 });
 }
 
 sub db_verify {
@@ -110,6 +116,13 @@ sub db_verify {
         return $email;
     }
     return;
+}
+
+sub db_retrieve {
+    my $email = shift;
+    my $dbh   = $self->db_connect;
+    my $user  = $dbh->selectrow_hashref('SELECT displayname FROM user_name WHERE email = ?',undef,$email);
+    return $self->utf8_decode($user->{displayname}) if $user;
 }
 
 sub db_add {
