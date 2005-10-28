@@ -2,12 +2,10 @@ package Kwiki::UserName::Auth;
 use Kwiki::UserName -Base;
 use mixin 'Kwiki::Installer';
 
-our $VERSION = '0.03';
+our $VERSION = '0.10';
 
 const cgi_class => 'Kwiki::UserName::Auth::CGI';
 const css_file  => 'user_name_auth.css';
-
-field db => -init => "\$self->hub->load_class('db')";
 
 # Forward to this URL after process form submittion.
 field 'forward';
@@ -17,11 +15,6 @@ sub register {
     my $registry = shift;
     $registry->add(preload => 'user_name');
     $registry->add(action  => 'user_name');
-}
-
-sub init {
-    super;
-    $self->hub->config->add_field("db_class" => 'Kwiki::DB::DBI');
 }
 
 ## Override Plugin.pm's render_screen()
@@ -48,9 +41,10 @@ sub setup {
 }
 
 sub login {
-    if(my $user = $self->db_verify($self->cgi->email, $self->cgi->password)) {
+    my ($email,$password) = (@_,$self->cgi->email,$self->cgi->password);
+    if(my $user = $self->db_verify($email,$password)) {
 	my $session = $self->hub->session->load;
-	$session->param("users_auth",{name => $user, email => $self->cgi->email });
+	$session->param("users_auth",{name => $user, email => $email });
 	if($self->cgi->forward) {
 	    return $self->redirect($self->cgi->forward);
 	}
@@ -84,11 +78,13 @@ sub mail_password {
 
 # DB subs
 
+field dbi => -init => '$self->hub->dbi';
+
 sub dbinit {
     my $db = shift;
-    my $dbh = $self->db->connect("dbi:SQLite:dbname=$db","","",
+    my $dbh = $self->dbi->connect("dbi:SQLite:dbname=$db","","",
 				 { RaiseError => 1, AutoCommit => 1 });
-    $dbh->do('CREATE TABLE user_name (displayname,email,password)');
+    $dbh->do('CREATE TABLE user_name (displayname NOT NULL,email NOT NULL,password NOT NULL,regdate DEFAULT CURRENT_TIMESTAMP)');
     $dbh->disconnect;
 }
 
@@ -101,7 +97,7 @@ sub dbpath {
 
 sub db_connect {
     my $db  = $self->dbpath;
-    $self->db->connect("dbi:SQLite:dbname=$db","","",
+    $self->dbi->connect("dbi:SQLite:dbname=$db","","",
 		       { RaiseError => 1, AutoCommit => 1 });
 }
 
@@ -129,8 +125,8 @@ sub db_add {
     my %vars = @_;
     return 0 if $self->db_exists($vars{email});
     my $dbh = $self->db_connect;
-    my $sth = $dbh->prepare('INSERT INTO user_name values(?,?,?)');
-    $sth->execute(@vars{qw(display_name email password )});
+    my $sth = $dbh->prepare('INSERT INTO user_name (displayname, email, password) values(?,?,?)');
+    $sth->execute(@vars{qw(display_name email password)}, );
     $sth->finish;
     $dbh->disconnect;
     return 1;

@@ -16,8 +16,8 @@ sub set_user_name {
     return unless $self->is_in_cgi;
     my $users = $self->hub->session->load->param("users_auth");
     $users && $users->{name} or return;
-    $self->name($users->{name});
-    $self->email($users->{email});
+    $self->name($self->utf8_decode($users->{name}));
+    $self->email($self->utf8_decode($users->{email}));
 }
 
 package Kwiki::Users::Auth;

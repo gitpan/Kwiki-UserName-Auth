@@ -1,3 +1,10 @@
+version: 0.10
+date: Sat Sep 10 13:55:10 CST 2005
+description:
+- Database schema changed, to have a "regdate" field, recording the registration date of an user.
+- Work-around when the name has non-ascii chars
+- Integrate with Kwiki::Session and Kwiki::DB::DBI
+----
 version: 0.02
 date: Sat Sep 10 13:55:10 CST 2005
 description:

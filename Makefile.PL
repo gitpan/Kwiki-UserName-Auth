@@ -11,5 +11,6 @@ requires        ('Kwiki' => 0.38,
 		);
 build_requires  ('Test::More');
 
+auto_install();
 &WriteAll;
 
